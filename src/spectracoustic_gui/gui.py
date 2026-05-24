@@ -1,22 +1,61 @@
+import io
+import base64
 from pathlib import Path
+import time
 from typing import TypedDict
 
 from nicegui import ui, run
 
 import photoacoustic.main as pa_main
-import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+import pickle
+
+
+UPDATE_PLOT_TIMER: float = 2.0
 
 
 class AnalysisDirectory(TypedDict):
     path: str | Path
 
 
-def update_plot():
-    with ui.matplotlib(figsize=(4, 4)).figure as fig:
-        x = np.linspace(0, 2, 100)
-        y = np.sin(2 * np.pi * x)
-        ax = fig.gca()
-        ax.plot(x, y)
+def get_linear_plot_if_changed(root: Path) -> Figure | None:
+    figpath = root / "_figures" / "__linear_fit.pickle"
+    if time.time() - figpath.stat().st_mtime > 2:
+        return
+    try:
+        with open(figpath, "rb") as f:
+            fig = pickle.load(f)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        ui.notify(f"Couldn't load figure with error {e}", type="negative")
+    return fig
+
+
+def update_plot(root: Path, plot_container: ui.element):
+    fig = get_linear_plot_if_changed(root)
+    if not fig:
+        return
+
+    plot_container.clear()
+
+    try:
+        # 1. Save the detached figure directly to an in-memory buffer
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+
+        # 2. Convert the image bytes to a base64 string
+        img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+
+        # 3. Display it using NiceGUI's native image element via Data URI
+        with plot_container:
+            ui.image(f"data:image/png;base64,{img_base64}").classes("w-full")
+            ui.notify("updating figure", type="info")
+
+    except Exception as e:
+        ui.notify(f"couldn't display figure with error {e}", type="negative")
 
 
 def directory_is_valid(dir_path: str | Path) -> bool:
@@ -35,7 +74,9 @@ def directory_is_valid(dir_path: str | Path) -> bool:
 
 
 # 1. FIX THE ANALYSIS FUNCTION: Run it in a separate process
-async def pa_main_wrapper(label: ui.label, analysis_dir: AnalysisDirectory):
+async def pa_main_wrapper(
+    label: ui.label, analysis_dir: AnalysisDirectory, plot_container: ui.element
+):
     path = label.text
     if not directory_is_valid(path):
         return
@@ -44,13 +85,16 @@ async def pa_main_wrapper(label: ui.label, analysis_dir: AnalysisDirectory):
         analysis_dir["path"] = path
     except Exception as e:
         ui.notify(e, type="negative")
+        return
 
+    plot_timer = ui.timer(UPDATE_PLOT_TIMER, lambda: update_plot(path, plot_container))
     ui.notify("Starting photoacoustic analysis script...", type="info")
 
     # run.cpu_bound drops the function into a separate process,
     # keeping the NiceGUI event loop completely free and fluid.
     await run.cpu_bound(pa_main.main, path)
 
+    plot_timer.cancel()
     ui.notify("Analysis complete!", type="positive")
 
 
@@ -84,11 +128,13 @@ def select_page():
     with ui.column().classes("w-[400 px] items-center items-stretch"):
         ui.markdown("# Photoacoustic Analysis 💥🎙️")
 
+        plot_container = ui.card().classes("w-full items-center mt-4")
         dir_path = ui.input(label="Data directory path:")
         label = ui.label().bind_text_from(dir_path, "value")
 
         ui.button(
-            text="Run analysis", on_click=lambda: pa_main_wrapper(label, analysis_dir)
+            text="Run analysis",
+            on_click=lambda: pa_main_wrapper(label, analysis_dir, plot_container),
         )
 
         ui.button(
