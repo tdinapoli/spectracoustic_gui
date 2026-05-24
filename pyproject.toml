@@ -1,0 +1,37 @@
+[project]
+name = "spectracoustic-gui"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "tdinapoli", email = "tomas.dina98@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+spectracoustic-gui = "spectracoustic_gui:main"
+
+[build-system]
+requires = ["uv_build>=0.9.17,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[tool.pixi.dependencies]
+nicegui = "*"
+
+[tool.pixi.pypi-dependencies]
+spectracoustic-gui = { path = ".", editable = true }
+photoacoustic = { path = "../photoacoustic", editable = true }
+
+[tool.pixi.tasks]
+build = """
+uv build &&
+cd ../photoacoustic && uv build &&
+cd ../spectracoustic_gui
+"""
+pack = { depends-on = "build", cmd = "pixi-pack --ignore-pypi-non-wheel --platform win-64 --inject dist/spectracoustic_gui-0.1.0-py3-none-any.whl --inject ../photoacoustic/dist/photoacoustic-0.1.0-py3-none-any.whl --create-executable" }
+gui = "python src/spectracoustic_gui/gui.py"
