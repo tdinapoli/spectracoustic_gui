@@ -19,13 +19,16 @@ class AnalysisDirectory(TypedDict):
     path: str | Path
 
 
-def get_linear_plot_if_changed(root: Path) -> Figure | None:
-    figpath = root / "_figures" / "__linear_fit.pickle"
+def get_linear_plot_if_changed(root: Path, fig_relative_path: str) -> Figure | None:
+    figpath = root / fig_relative_path
 
     if not figpath.exists():
         return
 
-    if time.time() - figpath.stat().st_mtime > 2:
+    mtime = figpath.stat().st_mtime
+    ctime = figpath.stat().st_ctime
+    now = time.time()
+    if (now - mtime) > UPDATE_PLOT_TIMER and (now - ctime) > UPDATE_PLOT_TIMER:
         return
 
     try:
@@ -38,8 +41,8 @@ def get_linear_plot_if_changed(root: Path) -> Figure | None:
     return fig
 
 
-def update_plot(root: Path, plot_image: ui.image):
-    fig = get_linear_plot_if_changed(root)
+def update_plot(root: Path, plot_image: ui.image, fig_relative_path: str):
+    fig = get_linear_plot_if_changed(root, fig_relative_path)
     if not fig:
         return
 
@@ -76,7 +79,10 @@ def directory_is_valid(dir_path: str | Path) -> bool:
 
 # 1. FIX THE ANALYSIS FUNCTION: Run it in a separate process
 async def pa_main_wrapper(
-    label: ui.label, analysis_dir: AnalysisDirectory, plot_image: ui.image
+    label: ui.label,
+    analysis_dir: AnalysisDirectory,
+    linear_plot_image: ui.image,
+    last_plot_image: ui.image,
 ):
     path = label.text
     if not directory_is_valid(path):
@@ -88,19 +94,27 @@ async def pa_main_wrapper(
         ui.notify(e, type="negative")
         return
 
-    plot_timer = ui.timer(UPDATE_PLOT_TIMER, lambda: update_plot(path, plot_image))
+    # linear plot image timer
+    linear_plot_timer = ui.timer(
+        UPDATE_PLOT_TIMER,
+        lambda: update_plot(path, linear_plot_image, "_figures/__linear_fit.pickle"),
+    )
+    last_plot_timer = ui.timer(
+        UPDATE_PLOT_TIMER,
+        lambda: update_plot(path, last_plot_image, "_figures/__last_plot.pickle"),
+    )
     ui.notify("Starting photoacoustic analysis script...", type="info")
 
     # run.cpu_bound drops the function into a separate process,
     # keeping the NiceGUI event loop completely free and fluid.
     await run.cpu_bound(pa_main.main, path)
 
-    plot_timer.cancel()
+    linear_plot_timer.cancel()
+    last_plot_timer.cancel()
     ui.notify("Analysis complete!", type="positive")
 
 
 def pa_make_done_file(analysis_dir: AnalysisDirectory):
-    print("making done file")
     try:
         p = Path(analysis_dir["path"]) / "done.txt"
         with open(p, "w") as f:
@@ -118,20 +132,20 @@ def root():
     ).classes("w-full")
 
 
-def print_list(result_list):
-    print(result_list)
-
-
 @ui.page("/")
 def select_page():
     analysis_dir = AnalysisDirectory(path="")
 
     ui.markdown("# Photoacoustic Analysis 💥🎙️")
     settings_container = ui.column().classes("w-[800px] items-center items-stretch")
-    image_container = ui.card().classes("w-[800px] items-center mt-4")
+    linear_plot_container = ui.card().classes("w-[800px] items-center mt-4")
+    last_plot_container = ui.card().classes("w-[800px] items-center mt-4")
 
-    with image_container:
-        plot_image = ui.image()
+    with linear_plot_container:
+        linear_plot_image = ui.image()
+
+    with last_plot_container:
+        last_plot_image = ui.image()
 
     with settings_container:
         dir_path = ui.input(label="Data directory path:")
@@ -140,7 +154,9 @@ def select_page():
 
         ui.button(
             text="Run analysis",
-            on_click=lambda: pa_main_wrapper(label, analysis_dir, plot_image),
+            on_click=lambda: pa_main_wrapper(
+                label, analysis_dir, linear_plot_image, last_plot_image
+            ),
         )
 
         ui.button(
