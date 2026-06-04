@@ -2,11 +2,12 @@ import io
 import base64
 from pathlib import Path
 import time
-from typing import TypedDict
+from typing import TypedDict, get_args
 
 from nicegui import ui, run
 
 import photoacoustic.main as pa_main
+from photoacoustic.constants import Options, PaSignal
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import pickle
@@ -136,10 +137,45 @@ def root():
 def select_page():
     analysis_dir = AnalysisDirectory(path="")
 
-    ui.markdown("# Photoacoustic Analysis 💥🎙️")
-    settings_container = ui.column().classes("w-[800px] items-center items-stretch")
-    linear_plot_container = ui.card().classes("w-[800px] items-center mt-4")
-    last_plot_container = ui.card().classes("w-[800px] items-center mt-4")
+    container_row = ui.row().classes("w-full gap-8 wrap")
+    with container_row:
+        upper_row = ui.column().classes("w-full items-stretch items-center shrink-0")
+        options_row = ui.row().classes("w-full items-stretch items-center")
+        lower_row = ui.column().classes("w-full items-stretch")
+
+        with upper_row:
+            ui.markdown("# Photoacoustic Analysis 💥🎙️")
+            settings_container = ui.row().classes("w-full items-center items-stretch")
+
+        with options_row:
+            ui.markdown("Options")
+            with ui.column().classes("flex-1 items-stretch"):
+                ui.checkbox("Plot timetrace for repeats", value=True)
+                ui.checkbox("Plot nonzero intercept", value=True)
+                ui.checkbox("Plot uncertainty slope", value=False)
+                ui.checkbox("Plot uncertainty slope0", value=True)
+            with ui.column().classes("flex-1 items-stretch"):
+                ui.number("Max Energy", value=50.0)
+                ui.number("Reference alpha value", value=1.0)
+                ui.number("Threshold factor", value=2.0)
+                ui.select(options=list(get_args(PaSignal)), value="signal_delta")
+
+        with lower_row:
+            plots_row = ui.row().classes("w-full gap-4 wrap items-stretch")
+            with plots_row:
+                ui.label("Live data view").classes("text-xl font-bold text-grey-7")
+                left_plot_col = ui.column().classes(
+                    "flex-1 min-w-[400px] items-stretch"
+                )
+                right_plot_col = ui.column().classes(
+                    "flex-1 min-w-[400px] items-stretch"
+                )
+
+                with left_plot_col:
+                    linear_plot_container = ui.card().classes("w-full items-center")
+
+                with right_plot_col:
+                    last_plot_container = ui.card().classes("w-full items-center")
 
     with linear_plot_container:
         linear_plot_image = ui.image()
@@ -147,21 +183,32 @@ def select_page():
     with last_plot_container:
         last_plot_image = ui.image()
 
+    plots_row.set_visibility(False)
     with settings_container:
-        dir_path = ui.input(label="Data directory path:")
+        dir_path = ui.input(label="Data directory path:").classes("flex-1")
 
         label = ui.label().bind_text_from(dir_path, "value")
+        label.set_visibility(False)
 
-        ui.button(
-            text="Run analysis",
-            on_click=lambda: pa_main_wrapper(
+        async def handle_run_click():
+            # 1. Hide the options row (or settings_container, depending on which one you want to hide!)
+            options_row.set_visibility(False)
+            plots_row.set_visibility(True)
+
+            # 2. Fire off the background analysis wrapper
+            await pa_main_wrapper(
                 label, analysis_dir, linear_plot_image, last_plot_image
-            ),
-        )
+            )
+
+            plots_row.set_visibility(False)
+            options_row.set_visibility(True)
 
         ui.button(
-            text="Measurements done", on_click=lambda: pa_make_done_file(analysis_dir)
+            text="Run",
+            on_click=lambda: handle_run_click(),
         )
+
+        ui.button(text="Finish", on_click=lambda: pa_make_done_file(analysis_dir))
 
 
 def main():
