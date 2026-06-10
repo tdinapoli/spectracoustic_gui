@@ -2310,8 +2310,8 @@ packages:
 - pypi: ./
   name: spectracoustic-gui
   version: 0.1.0
-  sha256: 1275f994919ddf8dfbdb259bf9d2418c51afefa60629cabae4fea765a419971f
-  requires_python: '>=3.13'
+  sha256: d04845b6806ac44733a313202f3f8f5381572b4250dc5a8eb63cfe5ecc762e84
+  requires_python: '>=3.12'
 - conda: https://conda.anaconda.org/conda-forge/noarch/starlette-1.0.0-pyhcf101f3_0.conda
   sha256: 1a1dc376e95491f4b2003f4428e6f7caf4a3de0ef9869248b29dcc9704c34b39
   md5: 8fbd5b6879350f1b5303c1a652d4b781
