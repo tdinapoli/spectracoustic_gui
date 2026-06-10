@@ -133,9 +133,10 @@ def root():
     ).classes("w-full")
 
 
-@ui.page("/")
-def select_page():
-    analysis_dir = AnalysisDirectory(path="")
+@ui.page("/{path}")
+def select_page(path: str | None = None):
+
+    analysis_dir = AnalysisDirectory(path=path or "")
 
     container_row = ui.row().classes("w-full gap-8 wrap")
     with container_row:
@@ -185,7 +186,9 @@ def select_page():
 
     plots_row.set_visibility(False)
     with settings_container:
-        dir_path = ui.input(label="Data directory path:").classes("flex-1")
+        dir_path = ui.input(
+            label="Data directory path:", value=str(analysis_dir)
+        ).classes("flex-1")
 
         label = ui.label().bind_text_from(dir_path, "value")
         label.set_visibility(False)
